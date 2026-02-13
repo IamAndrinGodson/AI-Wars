@@ -1,4 +1,4 @@
-# ML-Based Threat Detection System
+# Threat Detection System using Machine Learning (ML)
 
 A comprehensive, production-ready machine learning system for cybersecurity threat detection and automated response.
 
