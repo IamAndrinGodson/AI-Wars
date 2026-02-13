@@ -89,6 +89,7 @@ body {
     letter-spacing: -0.5px;
     background: linear-gradient(135deg, #fff, #a3a3a3);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
@@ -972,4 +973,521 @@ body {
 .tooltip-val {
     color: var(--accent-blue);
     font-weight: 600;
+}
+
+/* ==================== ATTACK CHAIN STYLES ==================== */
+
+.attack-chain-card {
+    border-left: 2px solid var(--accent-purple);
+    background: linear-gradient(90deg, rgba(188, 19, 254, 0.02), transparent);
+}
+
+.attack-chain-body {
+    min-height: 280px;
+}
+
+.attack-chain-container {
+    max-height: 220px;
+    overflow-y: auto;
+    margin-bottom: 16px;
+}
+
+.attack-chain-item {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+    transition: all 0.3s;
+}
+
+.attack-chain-item:hover {
+    border-color: var(--accent-purple);
+    box-shadow: 0 0 15px rgba(188, 19, 254, 0.2);
+}
+
+.chain-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.chain-source {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent-blue);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.chain-meta {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.chain-meta span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.chain-stages {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.chain-stages i {
+    color: #333;
+    font-size: 10px;
+}
+
+.kill-chain-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    justify-content: center;
+}
+
+.kill-chain-legend i {
+    color: #333;
+    font-size: 10px;
+}
+
+.stage-badge {
+    font-size: 10px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stage-badge.recon {
+    background: rgba(0, 243, 255, 0.1);
+    color: var(--accent-blue);
+    border: 1px solid rgba(0, 243, 255, 0.3);
+}
+
+.stage-badge.access {
+    background: rgba(0, 255, 157, 0.1);
+    color: var(--accent-green);
+    border: 1px solid rgba(0, 255, 157, 0.3);
+}
+
+.stage-badge.priv-esc {
+    background: rgba(255, 189, 0, 0.1);
+    color: var(--accent-yellow);
+    border: 1px solid rgba(255, 189, 0, 0.3);
+}
+
+.stage-badge.lateral {
+    background: rgba(188, 19, 254, 0.1);
+    color: var(--accent-purple);
+    border: 1px solid rgba(188, 19, 254, 0.3);
+}
+
+.stage-badge.exfil {
+    background: rgba(128, 0, 255, 0.1);
+    color: var(--accent-red);
+    border: 1px solid rgba(128, 0, 255, 0.3);
+}
+
+.stage-badge.active {
+    box-shadow: 0 0 10px currentColor;
+    animation: glow-pulse 1.5s infinite;
+}
+
+@keyframes glow-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.7;
+    }
+}
+
+.chain-severity {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.chain-severity.critical {
+    background: rgba(128, 0, 255, 0.2);
+    color: var(--accent-red);
+}
+
+.chain-severity.high {
+    background: rgba(255, 189, 0, 0.2);
+    color: var(--accent-yellow);
+}
+
+.chain-severity.medium {
+    background: rgba(0, 243, 255, 0.2);
+    color: var(--accent-blue);
+}
+
+.chain-severity.low {
+    background: rgba(0, 255, 157, 0.2);
+    color: var(--accent-green);
+}
+
+/* ==================== TEMPORAL HEATMAP STYLES ==================== */
+
+.temporal-card {
+    border-left: 2px solid var(--accent-yellow);
+    background: linear-gradient(90deg, rgba(255, 189, 0, 0.02), transparent);
+}
+
+.temporal-badges {
+    display: flex;
+    gap: 12px;
+}
+
+.badge-off-hours {
+    font-size: 11px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: rgba(128, 0, 255, 0.1);
+    color: var(--accent-red);
+    border: 1px solid rgba(128, 0, 255, 0.3);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.badge-weekend {
+    font-size: 11px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: rgba(255, 189, 0, 0.1);
+    color: var(--accent-yellow);
+    border: 1px solid rgba(255, 189, 0, 0.3);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.temporal-heatmap {
+    display: grid;
+    grid-template-columns: 40px repeat(24, 1fr);
+    gap: 2px;
+    margin-bottom: 16px;
+}
+
+.heatmap-row-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 8px;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.heatmap-cell {
+    aspect-ratio: 1;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.02);
+    min-height: 14px;
+    transition: all 0.2s;
+    cursor: pointer;
+    position: relative;
+}
+
+.heatmap-cell:hover {
+    transform: scale(1.2);
+    z-index: 10;
+    border-color: #fff;
+}
+
+.heatmap-cell.off-hours {
+    background: rgba(128, 0, 255, 0.05);
+    border-color: rgba(128, 0, 255, 0.1);
+}
+
+.heatmap-cell.level-1 {
+    background: rgba(0, 255, 157, 0.2);
+    border-color: rgba(0, 255, 157, 0.3);
+}
+
+.heatmap-cell.level-2 {
+    background: rgba(0, 243, 255, 0.3);
+    border-color: rgba(0, 243, 255, 0.4);
+}
+
+.heatmap-cell.level-3 {
+    background: rgba(255, 189, 0, 0.4);
+    border-color: rgba(255, 189, 0, 0.5);
+}
+
+.heatmap-cell.level-4 {
+    background: rgba(188, 19, 254, 0.5);
+    border-color: rgba(188, 19, 254, 0.6);
+}
+
+.heatmap-cell.level-5 {
+    background: rgba(128, 0, 255, 0.6);
+    border-color: rgba(128, 0, 255, 0.7);
+    box-shadow: 0 0 8px rgba(128, 0, 255, 0.4);
+}
+
+.heatmap-hour-labels {
+    display: grid;
+    grid-template-columns: 40px repeat(24, 1fr);
+    gap: 2px;
+    margin-top: 4px;
+}
+
+.hour-label {
+    font-size: 8px;
+    color: var(--text-secondary);
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.hour-label.off-hours {
+    color: rgba(128, 0, 255, 0.6);
+}
+
+.temporal-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    justify-content: center;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.temporal-legend .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.temporal-legend .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+}
+
+.temporal-legend .dot.low-activity {
+    background: rgba(0, 255, 157, 0.3);
+    border: 1px solid var(--accent-green);
+}
+
+.temporal-legend .dot.medium-activity {
+    background: rgba(255, 189, 0, 0.4);
+    border: 1px solid var(--accent-yellow);
+}
+
+.temporal-legend .dot.high-activity {
+    background: rgba(128, 0, 255, 0.6);
+    border: 1px solid var(--accent-red);
+}
+
+.temporal-legend .off-hours-zone {
+    color: var(--accent-red);
+    font-weight: 500;
+}
+
+/* ==================== ZERO-DAY BADGE STYLES ==================== */
+
+.badge-zero-day {
+    font-size: 9px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, rgba(255, 0, 0, 0.2), rgba(255, 100, 0, 0.2));
+    color: #ff4444;
+    border: 1px solid rgba(255, 68, 68, 0.5);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    animation: zero-day-pulse 1.5s infinite;
+    margin-left: 8px;
+}
+
+@keyframes zero-day-pulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 5px rgba(255, 68, 68, 0.4);
+    }
+
+    50% {
+        box-shadow: 0 0 15px rgba(255, 68, 68, 0.8);
+    }
+}
+
+/* ==================== PORT RISK COLORS ==================== */
+
+.port-risk-low {
+    color: var(--accent-green) !important;
+}
+
+.port-risk-medium {
+    color: var(--accent-yellow) !important;
+}
+
+.port-risk-high {
+    color: var(--accent-purple) !important;
+}
+
+.port-risk-critical {
+    color: var(--accent-red) !important;
+    font-weight: 700;
+}
+
+.port-service-tag {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+    font-weight: 600;
+}
+
+.port-service-tag.risk-low {
+    background: rgba(0, 255, 157, 0.1);
+    color: var(--accent-green);
+    border: 1px solid rgba(0, 255, 157, 0.2);
+}
+
+.port-service-tag.risk-medium {
+    background: rgba(255, 189, 0, 0.1);
+    color: var(--accent-yellow);
+    border: 1px solid rgba(255, 189, 0, 0.2);
+}
+
+.port-service-tag.risk-high {
+    background: rgba(188, 19, 254, 0.1);
+    color: var(--accent-purple);
+    border: 1px solid rgba(188, 19, 254, 0.2);
+}
+
+.port-service-tag.risk-critical {
+    background: rgba(128, 0, 255, 0.15);
+    color: var(--accent-red);
+    border: 1px solid rgba(128, 0, 255, 0.3);
+    animation: critical-blink 2s infinite;
+}
+
+@keyframes critical-blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.7;
+    }
+}
+
+/* ==================== IP TYPE ICONS ==================== */
+
+.ip-type-badge {
+    font-size: 10px;
+    margin-right: 6px;
+}
+
+.ip-type-badge.private {
+    color: var(--accent-green);
+}
+
+.ip-type-badge.public {
+    color: var(--accent-yellow);
+}
+
+.ip-type-badge.loopback {
+    color: var(--text-secondary);
+}
+
+/* ==================== OFF-HOURS / WEEKEND BADGES ==================== */
+
+.badge-timing {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+.badge-timing.off-hours {
+    background: rgba(128, 0, 255, 0.1);
+    color: var(--accent-red);
+    border: 1px solid rgba(128, 0, 255, 0.3);
+}
+
+.badge-timing.weekend {
+    background: rgba(255, 189, 0, 0.1);
+    color: var(--accent-yellow);
+    border: 1px solid rgba(255, 189, 0, 0.3);
+}
+
+/* ==================== BADGE INFO STYLE ==================== */
+
+.badge-info {
+    font-size: 11px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: rgba(0, 243, 255, 0.1);
+    color: var(--accent-blue);
+    border: 1px solid rgba(0, 243, 255, 0.3);
+}
+
+/* ==================== THREAT CLASS BADGE ==================== */
+
+.threat-class-badge {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+}
+
+.threat-class-badge.zero_day {
+    background: linear-gradient(135deg, rgba(255, 0, 0, 0.2), rgba(255, 100, 0, 0.2));
+    color: #ff4444;
+    border: 1px solid rgba(255, 68, 68, 0.5);
+    animation: zero-day-pulse 1.5s infinite;
+}
+
+.threat-class-badge.ransomware {
+    background: rgba(128, 0, 255, 0.15);
+    color: var(--accent-red);
+    border-color: rgba(128, 0, 255, 0.3);
+}
+
+.threat-class-badge.ddos {
+    background: rgba(188, 19, 254, 0.1);
+    color: var(--accent-purple);
+    border-color: rgba(188, 19, 254, 0.3);
+}
+
+.threat-class-badge.data_exfiltration {
+    background: rgba(255, 189, 0, 0.1);
+    color: var(--accent-yellow);
+    border-color: rgba(255, 189, 0, 0.3);
 }

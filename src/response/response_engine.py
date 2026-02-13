@@ -8,6 +8,10 @@ from typing import Dict, Any, List, Optional
 from enum import Enum
 from datetime import datetime
 import json
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +43,16 @@ class ResponseEngine:
         self.approval_threshold = config.get('automation', {}).get('require_approval_threshold', 80)
         self.actions_config = config.get('actions', {})
         
+        # Debug logging
+        logger.info(f"DEBUG ResponseEngine __init__: config keys: {config.keys()}")
+        logger.info(f"DEBUG ResponseEngine __init__: actions_config: {self.actions_config}")
+        logger.info(f"DEBUG ResponseEngine __init__: notifications config: {config.get('notifications', {})}")
+        
         self.action_history: List[Dict[str, Any]] = []
+        
+        # Rate limiting for emails
+        self.last_email_sent_time = 0
+        self.email_rate_limit_seconds = 60  # Minimum seconds between emails
         
     def calculate_risk_score(
         self,
@@ -128,7 +141,17 @@ class ResponseEngine:
         """Execute automated response action"""
         
         risk_score = risk_assessment['risk_score']
+        severity = risk_assessment.get('severity', 'low')
         action = self.determine_response_action(risk_score)
+        
+        logger.info(f"DEBUG execute_response: threat_id={threat_id}, risk={risk_score:.1f}, severity={severity}, action={action.value}")
+        
+        # ALWAYS send email notifications for high/critical severity threats
+        # This happens BEFORE any approval/queuing logic
+        if severity in ['high', 'critical']:
+            logger.info(f"DEBUG: High/Critical severity detected ({severity}), sending email notification")
+            alert_data = self._create_alert_data(threat_details)
+            self._send_notifications(alert_data)
         
         # Check if approval required
         needs_approval = (
@@ -174,6 +197,8 @@ class ResponseEngine:
         """Execute specific response action"""
         
         logger.info(f"Executing action: {action.value}")
+        logger.info(f"DEBUG: threat_details keys: {threat_details.keys() if threat_details else 'None'}")
+        logger.info(f"DEBUG: threat_details severity: {threat_details.get('severity') if threat_details else 'None'}")
         
         if action == ResponseAction.MONITOR:
             return self._action_monitor(threat_details)
@@ -212,14 +237,7 @@ class ResponseEngine:
         # - PagerDuty
         # - SIEM alerts
         
-        alert_data = {
-            'timestamp': datetime.now().isoformat(),
-            'threat_class': threat_details.get('threat_class'),
-            'source_ip': threat_details.get('src_ip'),
-            'destination': threat_details.get('dst_ip'),
-            'severity': threat_details.get('severity'),
-            'description': self._generate_alert_description(threat_details)
-        }
+        alert_data = self._create_alert_data(threat_details)
         
         # Send to notification channels
         self._send_notifications(alert_data)
@@ -229,6 +247,17 @@ class ResponseEngine:
             'action': 'alert',
             'alert_sent': True,
             'channels': ['email', 'slack', 'siem']
+        }
+    
+    def _create_alert_data(self, threat_details: Dict[str, Any]) -> Dict[str, Any]:
+        """Create standardized alert data structure"""
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'threat_class': threat_details.get('threat_class'),
+            'source_ip': threat_details.get('src_ip'),
+            'destination': threat_details.get('dst_ip'),
+            'severity': threat_details.get('severity'),
+            'description': self._generate_alert_description(threat_details)
         }
     
     def _action_isolate(self, threat_details: Dict[str, Any]) -> Dict[str, Any]:
@@ -249,6 +278,10 @@ class ResponseEngine:
         # Collect forensic evidence
         self._collect_forensic_evidence(threat_details)
         
+        # Send notifications
+        alert_data = self._create_alert_data(threat_details)
+        self._send_notifications(alert_data)
+
         return {
             'status': 'success',
             'action': 'isolate',
@@ -272,6 +305,10 @@ class ResponseEngine:
         # Add to blocklist
         block_result = self._add_to_blocklist(source_ip)
         
+        # Send notifications
+        alert_data = self._create_alert_data(threat_details)
+        self._send_notifications(alert_data)
+
         return {
             'status': 'success',
             'action': 'block',
@@ -289,6 +326,10 @@ class ResponseEngine:
         # - Disable user accounts
         # - Snapshot systems for analysis
         
+        # Send notifications
+        alert_data = self._create_alert_data(threat_details)
+        self._send_notifications(alert_data)
+
         return {
             'status': 'success',
             'action': 'quarantine',
@@ -305,6 +346,10 @@ class ResponseEngine:
         # - Terminate sessions
         # - Shutdown systems if necessary
         
+        # Send notifications
+        alert_data = self._create_alert_data(threat_details)
+        self._send_notifications(alert_data)
+
         return {
             'status': 'success',
             'action': 'terminate',
@@ -349,6 +394,101 @@ class ResponseEngine:
         """Send notifications through various channels"""
         # Simulated - in production, integrate with actual notification services
         logger.info(f"Sending notifications: {json.dumps(alert_data, indent=2)}")
+        
+        # Check if email notifications are enabled
+        email_config = self.config.get('notifications', {}).get('email', {})
+        logger.info(f"DEBUG: Email config found: {bool(email_config)}, enabled: {email_config.get('enabled', False)}")
+        
+        if not email_config.get('enabled', False):
+            logger.info("DEBUG: Email notifications disabled in config, skipping email")
+            return
+
+        # Check rate limit
+        current_time = time.time()
+        if current_time - self.last_email_sent_time < self.email_rate_limit_seconds:
+            logger.info(f"DEBUG: Email rate limit active. Skipping email. Time since last: {current_time - self.last_email_sent_time:.1f}s")
+            return
+
+        # Check severity threshold
+        severity = alert_data.get('severity', 'low')
+        if severity:
+            severity = severity.lower()
+        else:
+            severity = 'low'
+            
+        allowed_severities = email_config.get('alert_severity', ['high', 'critical'])
+        logger.info(f"DEBUG: Alert severity: {severity}, allowed: {allowed_severities}")
+        
+        if severity not in allowed_severities:
+            logger.info(f"DEBUG: Severity '{severity}' not in allowed list {allowed_severities}, skipping email")
+            return
+            
+        logger.info(f"DEBUG: Proceeding to send email for {severity} severity threat")
+        try:
+            self._send_email_notification(alert_data, email_config)
+            self.last_email_sent_time = time.time()  # Update last sent time
+        except Exception as e:
+            logger.error(f"Failed to send email notification: {e}")
+
+    def _send_email_notification(self, alert_data: Dict[str, Any], config: Dict[str, Any]):
+        """Send email aleart via SMTP"""
+        sender = config.get('sender_email', 'noreply@threat-detect.com')
+        recipients = config.get('recipients', [])
+        password = config.get('sender_password', '')
+        smtp_server = config.get('smtp_server', 'localhost')
+        smtp_port = config.get('smtp_port', 25)
+        
+        if not recipients:
+            logger.warning("No recipients configured for email alerts")
+            return
+            
+        if "${" in password or not password:
+            logger.warning("Email password not configured. Skipping email send.")
+            logger.info(f"WOULD SEND EMAIL TO: {recipients}")
+            return
+
+        msg = MIMEMultipart()
+        msg['From'] = sender
+        msg['To'] = ", ".join(recipients)
+        msg['Subject'] = f"[{alert_data.get('severity', 'UNKNOWN').upper()}] Threat Detected: {alert_data.get('threat_class')}"
+        
+        body = f"""
+        THREAT DETECTION ALERT
+        ======================
+        
+        Severity: {alert_data.get('severity', 'UNKNOWN').upper()}
+        Type: {alert_data.get('threat_class', 'Unknown')}
+        Time: {alert_data.get('timestamp')}
+        
+        Source: {alert_data.get('source_ip')}
+        Target: {alert_data.get('destination')}
+        
+        Description:
+        {alert_data.get('description')}
+        
+        Action Taken: Alert Sent
+        
+        --
+        ML Threat Detection System
+        """
+        
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # Connect to SMTP Server
+        try:
+            server = smtplib.SMTP(smtp_server, smtp_port)
+            if config.get('use_tls', True):
+                server.starttls()
+            
+            if password:
+                server.login(sender, password)
+                
+            server.send_message(msg)
+            server.quit()
+            logger.info(f"Email alert sent to {len(recipients)} recipients")
+        except Exception as e:
+            logger.error(f"SMTP Error: {e}")
+            raise
     
     def _isolate_network_segment(self, ip_address: str) -> Dict[str, Any]:
         """Isolate network segment (simulated)"""

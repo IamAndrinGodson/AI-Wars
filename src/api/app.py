@@ -23,7 +23,7 @@ from models.anomaly_detector import EnsembleAnomalyDetector
 from models.threat_classifier import ThreatClassifier
 from models.kmeans_detector import KMeansAnomalyDetector
 from features.feature_generator import FeatureEngineer
-from response.response_engine import ResponseEngine, ResponseAction
+from response.response_engine import ResponseEngine, ResponseAction, AttackChainReconstructor
 from collectors.network_monitor import get_monitor, NetworkMonitor
 from collectors.network_enrichment import enricher
 
@@ -763,12 +763,12 @@ async def simulate_attack(request: SimulationRequest, background_tasks: Backgrou
             
             detections.append(detection)
             
-            # Execute response in background - include source for proper filtering
+            # Execute response in background - include source and severity for proper filtering and email alerts
             background_tasks.add_task(
                 execute_response,
                 detection['threat_id'],
                 risk_assessment,
-                {**attack_events[i], 'threat_class': final_threat_class, 'source': 'simulation'}
+                {**attack_events[i], 'threat_class': final_threat_class, 'source': 'simulation', 'severity': risk_assessment['severity']}
             )
         
         return {
@@ -1114,6 +1114,247 @@ async def clear_history():
     return {"status": "success", "message": "History cleared"}
 
 
+# ==================== ADVANCED ANALYTICS ENDPOINTS ====================
+
+# Global attack chain reconstructor
+attack_chain_reconstructor = AttackChainReconstructor()
+
+@app.get("/api/attack-chains")
+async def get_attack_chains(limit: int = 10):
+    """
+    Get reconstructed attack chains grouped by source IP.
+    Uses the AttackChainReconstructor to identify Kill Chain stages.
+    """
+    if not response_engine:
+        return {"chains": [], "total": 0}
+    
+    # Populate the reconstructor with recent events
+    attack_chain_reconstructor.attack_chains = {}  # Reset
+    
+    history = response_engine.get_action_history(limit=500)
+    
+    for h in history:
+        result = h.get('result', {})
+        threat_details = result.get('threat_details', {}) if isinstance(result, dict) else {}
+        
+        if not threat_details:
+            continue
+            
+        event = {
+            'timestamp': h.get('timestamp'),
+            'threat_id': h.get('threat_id'),
+            'src_ip': threat_details.get('src_ip'),
+            'dst_ip': threat_details.get('dst_ip'),
+            'dst_port': threat_details.get('dst_port'),
+            'threat_class': threat_details.get('threat_class'),
+            'severity': h.get('severity'),
+            'risk_score': h.get('risk_score'),
+            'action': h.get('action')
+        }
+        attack_chain_reconstructor.add_event(event)
+    
+    # Reconstruct chains for each source IP
+    chains = []
+    for chain_key in list(attack_chain_reconstructor.attack_chains.keys())[:limit]:
+        chain_data = attack_chain_reconstructor.reconstruct_chain(chain_key)
+        if chain_data['events']:
+            chains.append({
+                'source_ip': chain_key,
+                'event_count': len(chain_data['events']),
+                'stages': chain_data['stages'],
+                'stage_count': len(chain_data['stages']),
+                'duration_seconds': chain_data['duration'],
+                'severity': chain_data['severity'],
+                'events': chain_data['events'][:10]  # Limit events per chain
+            })
+    
+    # Sort by stage count (more stages = more advanced attack)
+    chains.sort(key=lambda x: (x['stage_count'], x['event_count']), reverse=True)
+    
+    return {
+        "chains": chains[:limit],
+        "total": len(chains),
+        "kill_chain_stages": [
+            "reconnaissance",
+            "initial_access", 
+            "privilege_escalation",
+            "lateral_movement",
+            "exfiltration"
+        ]
+    }
+
+
+@app.get("/api/stats/temporal")
+async def get_temporal_stats(source: Optional[str] = None):
+    """
+    Get temporal breakdown of threat activity.
+    Returns hourly and daily distributions for heatmap visualization.
+    """
+    if not response_engine:
+        return {"hourly": {}, "daily": {}, "off_hours_count": 0, "weekend_count": 0}
+    
+    history = response_engine.get_action_history(limit=1000)
+    
+    # Filter by source if requested
+    if source:
+        history = [
+            h for h in history
+            if h.get('result', {}).get('threat_details', {}).get('source') == source
+        ]
+    
+    # Initialize counters
+    hourly_counts = {str(i): 0 for i in range(24)}
+    daily_counts = {"Mon": 0, "Tue": 0, "Wed": 0, "Thu": 0, "Fri": 0, "Sat": 0, "Sun": 0}
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    
+    # Heatmap data: hour x day matrix
+    heatmap = {day: {str(h): 0 for h in range(24)} for day in day_names}
+    
+    off_hours_count = 0
+    weekend_count = 0
+    business_hours_count = 0
+    
+    severity_by_hour = {str(i): {"low": 0, "medium": 0, "high": 0, "critical": 0} for i in range(24)}
+    
+    for h in history:
+        timestamp = h.get('timestamp')
+        if not timestamp:
+            continue
+            
+        try:
+            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            hour = dt.hour
+            day = dt.weekday()  # 0=Monday, 6=Sunday
+            
+            hourly_counts[str(hour)] += 1
+            daily_counts[day_names[day]] += 1
+            heatmap[day_names[day]][str(hour)] += 1
+            
+            # Track severity by hour
+            severity = h.get('severity', 'low')
+            if severity in severity_by_hour[str(hour)]:
+                severity_by_hour[str(hour)][severity] += 1
+            
+            # Off-hours detection (before 9am or after 5pm)
+            if hour < 9 or hour >= 17:
+                off_hours_count += 1
+            else:
+                business_hours_count += 1
+                
+            # Weekend detection
+            if day >= 5:  # Saturday, Sunday
+                weekend_count += 1
+                
+        except Exception as e:
+            logger.debug(f"Error parsing timestamp: {e}")
+            continue
+    
+    return {
+        "hourly": hourly_counts,
+        "daily": daily_counts,
+        "heatmap": heatmap,
+        "severity_by_hour": severity_by_hour,
+        "off_hours_count": off_hours_count,
+        "business_hours_count": business_hours_count,
+        "weekend_count": weekend_count,
+        "total_analyzed": len(history),
+        "peak_hour": max(hourly_counts, key=hourly_counts.get) if hourly_counts else "N/A",
+        "peak_day": max(daily_counts, key=daily_counts.get) if daily_counts else "N/A"
+    }
+
+
+@app.get("/api/threats/enhanced")
+async def get_enhanced_threats(limit: int = 50, source: Optional[str] = None):
+    """
+    Get threat history with enhanced metadata including:
+    - Zero-day detection flags
+    - Off-hours/weekend indicators
+    - Port risk levels
+    - IP enrichment data
+    """
+    if not response_engine:
+        return []
+    
+    fetch_limit = 500 if source else limit
+    history = response_engine.get_action_history(limit=fetch_limit)
+    
+    if source:
+        history = [
+            h for h in history
+            if h.get('result', {}).get('threat_details', {}).get('source') == source
+        ]
+        history = history[-limit:]
+    
+    enhanced = []
+    for h in history:
+        result = h.get('result', {})
+        threat_details = result.get('threat_details', {}) if isinstance(result, dict) else {}
+        
+        # Parse timestamp for timing analysis
+        timestamp = h.get('timestamp')
+        is_off_hours = False
+        is_weekend = False
+        hour = None
+        
+        if timestamp:
+            try:
+                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                hour = dt.hour
+                is_off_hours = hour < 9 or hour >= 17
+                is_weekend = dt.weekday() >= 5
+            except:
+                pass
+        
+        # Get port info
+        dst_port = threat_details.get('dst_port')
+        port_info = {"service": "", "risk": "unknown"}
+        if dst_port:
+            try:
+                port_info = enricher.get_port_info(int(dst_port))
+            except:
+                pass
+        
+        # Get IP info
+        src_ip = threat_details.get('src_ip')
+        src_ip_info = {"type": "unknown"}
+        if src_ip:
+            try:
+                src_ip_info = enricher.enrich_ip(src_ip)
+            except:
+                pass
+        
+        # Check for zero-day threat
+        threat_class = threat_details.get('threat_class', '')
+        is_zero_day = threat_class == 'zero_day'
+        
+        enhanced.append({
+            "timestamp": timestamp,
+            "hour": hour,
+            "threat_id": h.get('threat_id'),
+            "src_ip": src_ip,
+            "dst_ip": threat_details.get('dst_ip'),
+            "dst_port": dst_port,
+            "severity": h.get('severity'),
+            "action": h.get('action'),
+            "risk_score": h.get('risk_score'),
+            "threat_class": threat_class,
+            "source": threat_details.get('source', 'unknown'),
+            "process": threat_details.get('process', 'unknown'),
+            # Enhanced fields
+            "is_zero_day": is_zero_day,
+            "is_off_hours": is_off_hours,
+            "is_weekend": is_weekend,
+            "port_service": port_info.get("service", ""),
+            "port_risk": port_info.get("risk", "unknown"),
+            "port_desc": port_info.get("desc", ""),
+            "src_ip_type": src_ip_info.get("type", "unknown"),
+            "src_hostname": src_ip_info.get("hostname", ""),
+            "src_location": src_ip_info.get("location", "")
+        })
+    
+    return enhanced
+
+
 # ==================== REAL-TIME MONITORING ENDPOINTS ====================
 
 network_monitor: Optional[NetworkMonitor] = None
@@ -1206,7 +1447,7 @@ def init_network_monitor():
                         response_engine.execute_response(
                             result['threat_id'],
                             risk_assessment,
-                            {**events[i], 'threat_class': threat_classes[i], 'source': 'realtime'}, # Ensure source is passed
+                            {**events[i], 'threat_class': threat_classes[i], 'source': 'realtime', 'severity': risk_assessment['severity']}, # Ensure source and severity are passed
                             require_approval=False
                         )
                 except Exception as inner_e:

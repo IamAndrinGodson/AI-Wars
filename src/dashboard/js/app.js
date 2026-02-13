@@ -16,6 +16,9 @@ let currentMode = 'simulation'; // 'simulation' or 'realtime'
 let currentModel = 'synthetic'; // 'synthetic', 'kdd', 'cicids', or 'kmeans'
 let realtimePollingId = null;
 
+// Port info cache
+const portCache = {};
+
 // Initialize Dashboard
 document.addEventListener('DOMContentLoaded', () => {
     initCharts();
@@ -24,7 +27,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initSimulationControls();
     initRealtimeControls();
     updateDashboard();
+    fetchAdvancedAnalytics();
     setInterval(updateDashboard, REFRESH_INTERVAL);
+    setInterval(fetchAdvancedAnalytics, REFRESH_INTERVAL);
 });
 
 // Initialize mode toggle
@@ -859,25 +864,66 @@ function updateFeed(history) {
 
     tbody.innerHTML = '';
 
-    history.forEach(item => {
+    history.forEach(async item => {
         const tr = document.createElement('tr');
 
         const time = new Date(item.timestamp).toLocaleTimeString();
         const severityClass = (item.severity || 'low').toLowerCase();
         const actionClass = (item.action || 'monitor').toLowerCase();
+        const threatClass = item.threat_class || '';
 
         // Highlight real-time events
         const isRealtime = item.threat_id && item.threat_id.startsWith('RT-');
         const rowStyle = isRealtime ? 'background: rgba(16, 185, 129, 0.05);' : '';
 
-        // Enriched Data
-        const serviceTag = item.service ? `<span class="service-tag" title="${item.service_desc || ''}">${item.service}</span>` : '';
+        // Check for zero-day
+        const isZeroDay = threatClass === 'zero_day';
+
+        // Check for off-hours (parse timestamp)
+        let isOffHoursEvent = false;
+        let isWeekendEvent = false;
+        try {
+            const dt = new Date(item.timestamp);
+            const hour = dt.getHours();
+            isOffHoursEvent = hour < 9 || hour >= 17;
+            isWeekendEvent = dt.getDay() === 0 || dt.getDay() === 6;
+        } catch (e) { }
+
+        // Port enrichment - use cached data or fetch
+        const port = item.dst_port;
+        let serviceTag = item.service ? `<span class="service-tag" title="${item.service_desc || ''}">${item.service}</span>` : '';
+        let portRiskClass = '';
+
+        // Try to get port info from cache or use existing service data
+        if (port && portCache[port]) {
+            const portInfo = portCache[port];
+            portRiskClass = getPortRiskClass(portInfo.risk);
+            if (portInfo.service && !item.service) {
+                serviceTag = `<span class="port-service-tag ${portRiskClass}" title="${portInfo.desc || ''}">${portInfo.service}</span>`;
+            }
+        }
+
         const processName = item.process && item.process !== 'unknown' ? item.process : '<span style="opacity:0.3">-</span>';
+
+        // Build threat ID cell with badges
+        let threatIdCell = `<span style="font-family:monospace">${item.threat_id || 'N/A'}</span>`;
+        if (isZeroDay) {
+            threatIdCell += `<span class="badge-zero-day">⚠️ ZERO-DAY</span>`;
+        }
+
+        // Build timing badges
+        let timingBadges = '';
+        if (isOffHoursEvent) {
+            timingBadges += '<span class="badge-timing off-hours" title="Off-hours activity"><i class="fas fa-moon"></i></span>';
+        }
+        if (isWeekendEvent) {
+            timingBadges += '<span class="badge-timing weekend" title="Weekend activity"><i class="fas fa-calendar-week"></i></span>';
+        }
 
         tr.style.cssText = rowStyle;
         tr.innerHTML = `
-            <td>${time} ${isRealtime ? '<i class="fas fa-broadcast-tower" style="color: #10b981; margin-left: 4px;" title="Real-Time"></i>' : ''}</td>
-            <td style="font-family:monospace">${item.threat_id || 'N/A'}</td>
+            <td>${time} ${isRealtime ? '<i class="fas fa-broadcast-tower" style="color: #10b981; margin-left: 4px;" title="Real-Time"></i>' : ''}${timingBadges}</td>
+            <td>${threatIdCell}</td>
             <td class="ip-cell" data-ip="${item.src_ip}">
                 ${item.src_ip || 'N/A'}
                 <div class="ip-tooltip">Loading info...</div>
@@ -886,7 +932,7 @@ function updateFeed(history) {
                 ${item.dst_ip || 'N/A'}
                 <div class="ip-tooltip">Loading info...</div>
             </td>
-            <td class="port-cell">${item.dst_port || 'N/A'}${serviceTag}</td>
+            <td class="port-cell ${portRiskClass ? 'port-risk-' + portRiskClass.replace('risk-', '') : ''}">${port || 'N/A'}${serviceTag}</td>
             <td class="process-cell">${processName}</td>
             <td><span class="badge-severity ${severityClass}">${item.severity || 'low'}</span></td>
             <td><span class="badge-action ${actionClass}">${item.action || 'monitor'}</span></td>
@@ -898,6 +944,11 @@ function updateFeed(history) {
         ipCells.forEach(cell => {
             cell.addEventListener('mouseenter', () => fetchIpEnrichment(cell));
         });
+
+        // Pre-fetch port info if not cached
+        if (port && !portCache[port]) {
+            fetchPortInfo(port);
+        }
 
         tbody.appendChild(tr);
     });
@@ -956,4 +1007,278 @@ function renderTooltip(tooltip, data) {
 function updateLastUpdated() {
     const now = new Date();
     document.getElementById('last-updated').textContent = now.toLocaleTimeString();
+}
+
+// ==================== ADVANCED ANALYTICS ====================
+
+// Fetch all advanced analytics data
+async function fetchAdvancedAnalytics() {
+    try {
+        await Promise.all([
+            fetchAttackChains(),
+            fetchTemporalStats()
+        ]);
+    } catch (e) {
+        console.error("Error fetching advanced analytics:", e);
+    }
+}
+
+// Fetch and render attack chains
+async function fetchAttackChains() {
+    try {
+        const response = await fetch(`${API_BASE}/attack-chains?limit=5`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        renderAttackChains(data);
+    } catch (e) {
+        console.error("Error fetching attack chains:", e);
+    }
+}
+
+// Render attack chain timeline
+function renderAttackChains(data) {
+    const container = document.getElementById('attack-chain-container');
+    const countBadge = document.getElementById('chain-count');
+
+    if (!container) return;
+
+    // Update count badge
+    if (countBadge) {
+        countBadge.textContent = `${data.total} Chain${data.total !== 1 ? 's' : ''}`;
+    }
+
+    if (!data.chains || data.chains.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-link-slash"></i>
+                <p>No attack chains detected</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Stage class mapping
+    const stageClassMap = {
+        'reconnaissance': 'recon',
+        'initial_access': 'access',
+        'privilege_escalation': 'priv-esc',
+        'lateral_movement': 'lateral',
+        'exfiltration': 'exfil'
+    };
+
+    const stageLabelMap = {
+        'reconnaissance': 'Reconnaissance',
+        'initial_access': 'Initial Access',
+        'privilege_escalation': 'Privilege Escalation',
+        'lateral_movement': 'Lateral Movement',
+        'exfiltration': 'Exfiltration'
+    };
+
+    container.innerHTML = data.chains.map(chain => `
+        <div class="attack-chain-item">
+            <div class="chain-header">
+                <span class="chain-source">
+                    <i class="fas fa-network-wired"></i> ${chain.source_ip}
+                </span>
+                <span class="chain-severity ${chain.severity}">${chain.severity.toUpperCase()}</span>
+            </div>
+            <div class="chain-meta">
+                <span><i class="fas fa-list"></i> ${chain.event_count} events</span>
+                <span><i class="fas fa-clock"></i> ${formatDuration(chain.duration_seconds)}</span>
+                <span><i class="fas fa-layer-group"></i> ${chain.stage_count} stages</span>
+            </div>
+            <div class="chain-stages">
+                ${chain.stages.length > 0 ? chain.stages.map((stage, idx) => `
+                    <span class="stage-badge ${stageClassMap[stage] || ''} active">
+                        ${stageLabelMap[stage] || stage}
+                    </span>
+                    ${idx < chain.stages.length - 1 ? '<i class="fas fa-arrow-right"></i>' : ''}
+                `).join('') : '<span style="color: #666; font-size: 11px;">No identified stages</span>'}
+            </div>
+        </div>
+    `).join('');
+}
+
+// Format duration in human readable format
+function formatDuration(seconds) {
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+    return `${Math.round(seconds / 3600)}h`;
+}
+
+// Fetch temporal statistics
+async function fetchTemporalStats() {
+    try {
+        const response = await fetch(`${API_BASE}/stats/temporal?source=${currentMode}`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        renderTemporalHeatmap(data);
+        updateTemporalBadges(data);
+    } catch (e) {
+        console.error("Error fetching temporal stats:", e);
+    }
+}
+
+// Update temporal badges
+function updateTemporalBadges(data) {
+    const offHoursCount = document.getElementById('off-hours-count');
+    const weekendCount = document.getElementById('weekend-count');
+
+    if (offHoursCount) offHoursCount.textContent = data.off_hours_count || 0;
+    if (weekendCount) weekendCount.textContent = data.weekend_count || 0;
+}
+
+// Render temporal heatmap
+function renderTemporalHeatmap(data) {
+    const container = document.getElementById('temporal-heatmap');
+    if (!container) return;
+
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const hours = Array.from({ length: 24 }, (_, i) => i);
+
+    // Find max value for normalization
+    let maxCount = 0;
+    if (data.heatmap) {
+        for (const day of days) {
+            for (const hour of hours) {
+                const count = data.heatmap[day]?.[String(hour)] || 0;
+                if (count > maxCount) maxCount = count;
+            }
+        }
+    }
+
+    // Create heatmap grid
+    let html = '';
+
+    // Hour labels row
+    html += '<div class="heatmap-row-label"></div>';
+    for (const hour of hours) {
+        const isOffHours = hour < 9 || hour >= 17;
+        html += `<div class="hour-label ${isOffHours ? 'off-hours' : ''}">${hour}</div>`;
+    }
+
+    // Data rows
+    for (const day of days) {
+        const isWeekend = day === 'Sat' || day === 'Sun';
+        html += `<div class="heatmap-row-label ${isWeekend ? 'weekend' : ''}">${day}</div>`;
+
+        for (const hour of hours) {
+            const count = data.heatmap?.[day]?.[String(hour)] || 0;
+            const isOffHours = hour < 9 || hour >= 17;
+            const level = getHeatmapLevel(count, maxCount);
+
+            html += `
+                <div class="heatmap-cell ${isOffHours ? 'off-hours' : ''} level-${level}"
+                     title="${day} ${hour}:00 - ${count} event${count !== 1 ? 's' : ''}">
+                </div>
+            `;
+        }
+    }
+
+    container.innerHTML = html;
+}
+
+// Get heatmap level (0-5) based on count
+function getHeatmapLevel(count, maxCount) {
+    if (count === 0) return 0;
+    if (maxCount === 0) return 0;
+
+    const ratio = count / maxCount;
+    if (ratio < 0.2) return 1;
+    if (ratio < 0.4) return 2;
+    if (ratio < 0.6) return 3;
+    if (ratio < 0.8) return 4;
+    return 5;
+}
+
+// Fetch port info with caching
+async function fetchPortInfo(port) {
+    if (!port || port === 'N/A') return null;
+
+    // Check cache
+    if (portCache[port]) {
+        return portCache[port];
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/enrich/port/${port}`);
+        if (response.ok) {
+            const data = await response.json();
+            portCache[port] = data;
+            return data;
+        }
+    } catch (e) {
+        console.error("Error fetching port info:", e);
+    }
+
+    return null;
+}
+
+// Get IP type icon
+function getIpTypeIcon(ipType) {
+    switch (ipType?.toLowerCase()) {
+        case 'private':
+            return '<span class="ip-type-badge private" title="Private IP">🏠</span>';
+        case 'public':
+            return '<span class="ip-type-badge public" title="Public IP">🌐</span>';
+        case 'loopback':
+            return '<span class="ip-type-badge loopback" title="Loopback">🔄</span>';
+        default:
+            return '';
+    }
+}
+
+// Get port risk class
+function getPortRiskClass(risk) {
+    switch (risk?.toLowerCase()) {
+        case 'low': return 'risk-low';
+        case 'medium': return 'risk-medium';
+        case 'high': return 'risk-high';
+        case 'critical': return 'risk-critical';
+        default: return '';
+    }
+}
+
+// Format port display with service info
+function formatPortDisplay(port, portInfo) {
+    if (!portInfo) {
+        return `<span class="port-number">${port || 'N/A'}</span>`;
+    }
+
+    const riskClass = getPortRiskClass(portInfo.risk);
+    const service = portInfo.service || '';
+
+    let html = `<span class="port-number${riskClass ? ' port-' + riskClass : ''}">${port}</span>`;
+
+    if (service) {
+        html += `<span class="port-service-tag ${riskClass}" title="${portInfo.desc || ''}">${service}</span>`;
+    }
+
+    return html;
+}
+
+// Check if time is off-hours (before 9am or after 5pm)
+function isOffHours(hour) {
+    return hour !== null && (hour < 9 || hour >= 17);
+}
+
+// Check if day is weekend
+function isWeekend(date) {
+    const day = date.getDay();
+    return day === 0 || day === 6;
+}
+
+// Fetch enhanced threats with all metadata
+async function fetchEnhancedThreats() {
+    try {
+        const response = await fetch(`${API_BASE}/threats/enhanced?limit=50&source=${currentMode}`);
+        if (!response.ok) return null;
+
+        return await response.json();
+    } catch (e) {
+        console.error("Error fetching enhanced threats:", e);
+        return null;
+    }
 }

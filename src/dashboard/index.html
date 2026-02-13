@@ -227,6 +227,62 @@
             </div>
         </div>
 
+        <!-- Advanced Analytics Section -->
+        <div class="charts-grid">
+            <!-- Attack Chain Timeline -->
+            <div class="card chart-card attack-chain-card">
+                <div class="card-header">
+                    <h3><i class="fas fa-project-diagram"></i> Attack Chain Timeline</h3>
+                    <span class="badge-info" id="chain-count">0 Chains</span>
+                </div>
+                <div class="card-body attack-chain-body">
+                    <div id="attack-chain-container" class="attack-chain-container">
+                        <div class="empty-state">
+                            <i class="fas fa-link-slash"></i>
+                            <p>No attack chains detected</p>
+                        </div>
+                    </div>
+                    <div class="kill-chain-legend">
+                        <span class="stage-badge recon">Reconnaissance</span>
+                        <i class="fas fa-arrow-right"></i>
+                        <span class="stage-badge access">Initial Access</span>
+                        <i class="fas fa-arrow-right"></i>
+                        <span class="stage-badge priv-esc">Privilege Escalation</span>
+                        <i class="fas fa-arrow-right"></i>
+                        <span class="stage-badge lateral">Lateral Movement</span>
+                        <i class="fas fa-arrow-right"></i>
+                        <span class="stage-badge exfil">Exfiltration</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Temporal Heatmap -->
+            <div class="card chart-card temporal-card">
+                <div class="card-header">
+                    <h3><i class="fas fa-clock"></i> Temporal Activity</h3>
+                    <div class="temporal-badges">
+                        <span class="badge-off-hours" id="off-hours-badge">
+                            <i class="fas fa-moon"></i> Off-Hours: <span id="off-hours-count">0</span>
+                        </span>
+                        <span class="badge-weekend" id="weekend-badge">
+                            <i class="fas fa-calendar-week"></i> Weekend: <span id="weekend-count">0</span>
+                        </span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="temporal-heatmap" class="temporal-heatmap">
+                        <!-- Heatmap grid rendered via JS -->
+                    </div>
+                    <div class="temporal-legend">
+                        <span class="legend-item"><span class="dot low-activity"></span> Low</span>
+                        <span class="legend-item"><span class="dot medium-activity"></span> Medium</span>
+                        <span class="legend-item"><span class="dot high-activity"></span> High</span>
+                        <span class="legend-item off-hours-zone">⚠️ Off-Hours (before 9AM / after 5PM)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Live Feed Section -->
         <div class="card feed-card">
             <div class="card-header">
