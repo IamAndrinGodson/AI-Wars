@@ -2,7 +2,7 @@
 
 A comprehensive, production-ready machine learning system for cybersecurity threat detection and automated response.
 
-## 🎯 Overview
+## Overview
 
 This system implements state-of-the-art ML techniques for:
 - Real-time network anomaly detection
@@ -11,7 +11,7 @@ This system implements state-of-the-art ML techniques for:
 - Behavioral analytics (UEBA)
 - Threat intelligence and prediction
 
-## 🎨 UX & Design
+## UX & Design
 
 The dashboard features a **"Deep Dark" Cyberpunk Aesthetic** designed for modern SOC environments:
 - **Neon Accents**: High-contrast visualizations for immediate attention.
